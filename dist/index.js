@@ -53630,26 +53630,47 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                 }
                 nodes {
                   id
-                  fieldValues(first: 20) {
-                    nodes {
-                      ... on ProjectV2ItemFieldTextValue {
-                        field {
-                          ... on ProjectV2FieldCommon {
-                            name
-                          }
+                                  fieldValues(first: 20) {
+                  nodes {
+                    __typename
+                    ... on ProjectV2ItemFieldTextValue {
+                      field {
+                        ... on ProjectV2FieldCommon {
+                          name
                         }
-                        text
                       }
-                      ... on ProjectV2ItemFieldSingleSelectValue {
-                        field {
-                          ... on ProjectV2FieldCommon {
-                            name
-                          }
+                      text
+                    }
+                    ... on ProjectV2ItemFieldSingleSelectValue {
+                      field {
+                        ... on ProjectV2FieldCommon {
+                          name
                         }
-                        name
+                      }
+                      name
+                    }
+                    ... on ProjectV2ItemFieldUserValue {
+                      field {
+                        ... on ProjectV2FieldCommon {
+                          name
+                        }
+                      }
+                      users(first: 10) {
+                        nodes {
+                          login
+                        }
                       }
                     }
+                    ... on ProjectV2ItemFieldDateValue {
+                      field {
+                        ... on ProjectV2FieldCommon {
+                          name
+                        }
+                      }
+                      date
+                    }
                   }
+                }
                                   content {
                   __typename
                   ... on Issue {
@@ -53727,9 +53748,12 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                     let title = 'Unknown Title';
                     let status = 'Unknown';
                     const assignees = [];
+                    let createdAt = new Date().toISOString();
+                    let updatedAt = new Date().toISOString();
                     if (item.fieldValues?.nodes) {
                         for (const fieldValue of item.fieldValues.nodes) {
                             const fieldName = fieldValue.field?.name;
+                            coreExports.info(`Field: ${fieldName} | Value type: ${fieldValue.__typename} | Keys: ${Object.keys(fieldValue).join(', ')}`);
                             if (fieldName === 'Title') {
                                 title = fieldValue.text || fieldValue.name || title;
                             }
@@ -53737,8 +53761,24 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                                 status = fieldValue.name || fieldValue.text || status;
                             }
                             else if (fieldName === 'Assignees') {
-                                // Handle assignee field values - this might need adjustment based on actual structure
-                                coreExports.info(`Assignee field found: ${JSON.stringify(fieldValue)}`);
+                                coreExports.info(`Assignee field structure: ${JSON.stringify(fieldValue, null, 2)}`);
+                                // Extract assignees from the field value
+                                if (fieldValue.users?.nodes) {
+                                    assignees.push(...fieldValue.users.nodes.map((user) => user.login));
+                                }
+                                else if (fieldValue.text) {
+                                    // Handle text-based assignee field
+                                    assignees.push(fieldValue.text);
+                                }
+                            }
+                            else if (fieldName === 'Created' ||
+                                fieldName === 'Date created') {
+                                createdAt = fieldValue.date || fieldValue.text || createdAt;
+                            }
+                            else if (fieldName === 'Updated' ||
+                                fieldName === 'Date updated' ||
+                                fieldName === 'Last updated') {
+                                updatedAt = fieldValue.date || fieldValue.text || updatedAt;
                             }
                         }
                     }
@@ -53750,8 +53790,8 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                         status,
                         assignees,
                         labels: [],
-                        createdAt: new Date().toISOString(), // fallback
-                        updatedAt: new Date().toISOString(), // fallback
+                        createdAt,
+                        updatedAt,
                         type: 'DraftIssue', // assume draft for items without content
                         repository: undefined,
                         number: undefined
@@ -53878,7 +53918,7 @@ function shouldIncludeItem(item) {
     return shouldInclude;
 }
 /**
- * Format date for display
+ * Format date for display (UTC)
  */
 function formatDate(dateString) {
     const date = new Date(dateString);
@@ -53886,7 +53926,9 @@ function formatDate(dateString) {
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: 'UTC',
+        timeZoneName: 'short'
     });
 }
 /**
