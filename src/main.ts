@@ -97,58 +97,59 @@ async function fetchProjectData(
                       }
                     }
                   }
-                  content {
-                    ... on Issue {
-                      title
-                      url
-                      number
-                      createdAt
-                      updatedAt
-                      assignees(first: 10) {
-                        nodes {
-                          login
-                        }
+                                  content {
+                  __typename
+                  ... on Issue {
+                    title
+                    url
+                    number
+                    createdAt
+                    updatedAt
+                    assignees(first: 10) {
+                      nodes {
+                        login
                       }
-                      labels(first: 10) {
-                        nodes {
-                          name
-                        }
-                      }
-                      repository {
+                    }
+                    labels(first: 10) {
+                      nodes {
                         name
                       }
                     }
-                    ... on PullRequest {
-                      title
-                      url
-                      number
-                      createdAt
-                      updatedAt
-                      assignees(first: 10) {
-                        nodes {
-                          login
-                        }
+                    repository {
+                      name
+                    }
+                  }
+                  ... on PullRequest {
+                    title
+                    url
+                    number
+                    createdAt
+                    updatedAt
+                    assignees(first: 10) {
+                      nodes {
+                        login
                       }
-                      labels(first: 10) {
-                        nodes {
-                          name
-                        }
-                      }
-                      repository {
+                    }
+                    labels(first: 10) {
+                      nodes {
                         name
                       }
                     }
-                    ... on DraftIssue {
-                      title
-                      createdAt
-                      updatedAt
-                      assignees(first: 10) {
-                        nodes {
-                          login
-                        }
+                    repository {
+                      name
+                    }
+                  }
+                  ... on DraftIssue {
+                    title
+                    createdAt
+                    updatedAt
+                    assignees(first: 10) {
+                      nodes {
+                        login
                       }
                     }
                   }
+                }
                 }
               }
             }
@@ -169,10 +170,48 @@ async function fetchProjectData(
 
       // Process items from this page
       for (const item of project.items.nodes) {
+        // Handle items with null/undefined content but try to extract from field values
         if (!item.content) {
           core.info(
-            `⚠️ Skipping item with no content: ID=${item.id} | Item keys: ${Object.keys(item).join(', ')} | FieldValues: ${item.fieldValues?.nodes?.length || 0}`
+            `⚠️ Item with null content: ID=${item.id} | FieldValues: ${item.fieldValues?.nodes?.length || 0}`
           )
+
+          // Try to extract information from field values
+          let title = 'Unknown Title'
+          let status = 'Unknown'
+          const assignees: string[] = []
+
+          if (item.fieldValues?.nodes) {
+            for (const fieldValue of item.fieldValues.nodes) {
+              const fieldName = fieldValue.field?.name
+              if (fieldName === 'Title') {
+                title = fieldValue.text || fieldValue.name || title
+              } else if (fieldName === 'Status') {
+                status = fieldValue.name || fieldValue.text || status
+              } else if (fieldName === 'Assignees') {
+                // Handle assignee field values - this might need adjustment based on actual structure
+                core.info(`Assignee field found: ${JSON.stringify(fieldValue)}`)
+              }
+            }
+          }
+
+          core.info(
+            `📝 Processing item from field values: "${title}" | Status: ${status}`
+          )
+
+          allItems.push({
+            id: item.id,
+            title,
+            url: `https://github.com/orgs/${owner}/projects/${projectNumber}`,
+            status,
+            assignees,
+            labels: [],
+            createdAt: new Date().toISOString(), // fallback
+            updatedAt: new Date().toISOString(), // fallback
+            type: 'DraftIssue', // assume draft for items without content
+            repository: undefined,
+            number: undefined
+          })
           continue
         }
 
