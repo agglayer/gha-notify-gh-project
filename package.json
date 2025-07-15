@@ -1,7 +1,7 @@
 {
   "name": "gha-notify-gh-project",
   "description": "GitHub Action to publish GitHub Projects summaries to Slack",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "sebastiendan",
   "type": "module",
   "private": true,

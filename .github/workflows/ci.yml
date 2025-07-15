@@ -10,8 +10,6 @@ on:
 
 permissions:
   contents: read
-  # For organization projects, you may need additional permissions:
-  # organization-projects: read
 
 jobs:
   test-typescript:

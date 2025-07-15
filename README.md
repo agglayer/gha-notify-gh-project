@@ -33,8 +33,6 @@ on:
 
 permissions:
   contents: read
-  # For organization projects, you may need additional permissions:
-  # organization-projects: read
 
 jobs:
   slack-summary:
@@ -45,7 +43,8 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           project-url: 'https://github.com/orgs/your-org/projects/1'
-          slack-bot-token: ${{ secrets.SLACK_APP_TOKEN_AGGLAYER_NOTIFY_GH_PROJECT }} # Pre-configured org secret
+          slack-bot-token: ${{
+            secrets.SLACK_APP_TOKEN_AGGLAYER_NOTIFY_GH_PROJECT }} # Pre-configured org secret
           slack-channel: '#standup'
 ```
 
@@ -60,8 +59,6 @@ on:
 
 permissions:
   contents: read
-  # For organization projects, you may need additional permissions:
-  # organization-projects: read
 
 jobs:
   slack-summary:
@@ -104,33 +101,41 @@ jobs:
 
 ### 1. GitHub Token
 
-The action requires a GitHub token with the following permissions:
+The action requires a GitHub token with access to GitHub Projects V2.
+**Important**: `GITHUB_TOKEN` has limited access to organization projects and
+may not work for all scenarios.
 
-- `contents: read` (basic repository access)
-- `organization-projects: read` (for organization projects)
-- `read:project` (to read project data - for personal access tokens)
+#### Using GITHUB_TOKEN (Limited Support)
 
-#### Using GITHUB_TOKEN (Recommended)
+The default `GITHUB_TOKEN` can only access projects in certain cases:
 
-You can use the default `GITHUB_TOKEN` in most cases. Make sure to set the
-correct permissions in your workflow:
+- **Repository projects**: Works if the project is linked to the repository
+- **Organization projects**: May fail with "Could not resolve to ProjectV2"
+  error
+
+Set minimal permissions in your workflow:
 
 ```yaml
 permissions:
   contents: read
-  # For organization projects, you may need additional permissions:
-  # organization-projects: read
 ```
 
-#### Using Personal Access Token
+#### Using Personal Access Token (Recommended for Organization Projects)
 
-If you need additional permissions or are accessing projects across
-organizations, create a personal access token with:
+For reliable access to organization projects, create a personal access token
+with:
 
-- `read:org` (to access organization projects)
+- `read:org` (to access organization resources)
 - `read:project` (to read project data)
 
-Then add it as a secret `GITHUB_PAT` and use it instead of `GITHUB_TOKEN`.
+1. Go to GitHub Settings > Developer settings > Personal access tokens >
+   Fine-grained tokens
+2. Create a token with the above permissions
+3. Add it as a repository secret named `GITHUB_PAT`
+4. Use `github-token: ${{ secrets.GITHUB_PAT }}` in your workflow
+
+**For agglayer users**: The pre-configured token already has the necessary
+permissions.
 
 ### 2. Slack App Setup
 
@@ -146,13 +151,13 @@ use it immediately with the pre-configured organization secret:
 - name: Send Project Summary to Slack
   uses: agglayer/gha-notify-gh-project@v1
   with:
-    github-token: ${{ secrets.GITHUB_TOKEN }}
+    github-token: ${{ secrets.GITHUB_TOKEN }} # PAT if org project, see below
     project-url: 'https://github.com/orgs/agglayer/projects/1'
     slack-bot-token: ${{ secrets.SLACK_APP_TOKEN_AGGLAYER_NOTIFY_GH_PROJECT }}
     slack-channel: '#your-channel'
 ```
 
-Just invite the bot to your desired channel with `/invite @GitHub Projects Bot`
+Just invite the bot to your desired channel with `/invite @Agglayer Github Project Notifier`
 and you're ready to go!
 
 #### Option B: Use the Pre-built Slack App (Other Organizations)
@@ -204,6 +209,34 @@ You can specify the channel in several ways:
 
 **Important**: The bot must be manually invited to each channel before it can
 post messages. Use `/invite @YourBotName` in the target channel.
+
+## Troubleshooting
+
+### "Could not resolve to a ProjectV2 with the number X"
+
+This error occurs when the GitHub token cannot access the specified project.
+Common causes:
+
+1. **Project doesn't exist**: Verify the project URL and number are correct
+2. **Using GITHUB_TOKEN with organization projects**: `GITHUB_TOKEN` has limited
+   access to organization projects
+3. **Missing permissions**: The token lacks necessary permissions
+
+**Solutions:**
+
+- **For organization projects**: Use a Personal Access Token instead of
+  `GITHUB_TOKEN`
+- **Check project URL**: Ensure the project exists at the specified URL
+- **Verify project number**: The number in the URL should match an existing
+  project
+
+### Project Access Permissions
+
+- **Repository projects**: `GITHUB_TOKEN` usually works
+- **Organization projects**: Requires Personal Access Token with `read:org` and
+  `read:project` permissions
+- **Private projects**: Ensure the token has access to the
+  organization/repository
 
 ## Example Output
 

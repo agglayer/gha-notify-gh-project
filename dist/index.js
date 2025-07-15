@@ -53590,7 +53590,7 @@ var distExports = requireDist();
  * Parse GitHub Project URL to extract owner, project number, and type
  */
 function parseProjectUrl(url) {
-    const match = url.match(/github\.com\/(orgs|users)\/([^\/]+)\/projects\/(\d+)/);
+    const match = url.match(/github\.com\/(orgs|users)\/([^/]+)\/projects\/(\d+)/);
     if (!match) {
         throw new Error(`Invalid project URL format: ${url}`);
     }
@@ -53752,11 +53752,85 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
     }
 }
 /**
- * Group items by assignees
+ * Get emoji for item status
+ */
+function getStatusEmoji(status) {
+    const statusLower = status.toLowerCase();
+    if (statusLower.includes('todo') ||
+        statusLower.includes('to do') ||
+        statusLower.includes('backlog')) {
+        return '📋';
+    }
+    if (statusLower.includes('progress') ||
+        statusLower.includes('doing') ||
+        statusLower.includes('active')) {
+        return '🚧';
+    }
+    if (statusLower.includes('done') ||
+        statusLower.includes('complete') ||
+        statusLower.includes('finished')) {
+        return '✅';
+    }
+    return '📝'; // Default for unknown status
+}
+/**
+ * Get status priority for sorting (lower number = higher priority)
+ */
+function getStatusPriority(status) {
+    const statusLower = status.toLowerCase();
+    if (statusLower.includes('todo') ||
+        statusLower.includes('to do') ||
+        statusLower.includes('backlog')) {
+        return 1; // Todo first
+    }
+    if (statusLower.includes('progress') ||
+        statusLower.includes('doing') ||
+        statusLower.includes('active')) {
+        return 2; // In Progress second
+    }
+    if (statusLower.includes('done') ||
+        statusLower.includes('complete') ||
+        statusLower.includes('finished')) {
+        return 3; // Done last
+    }
+    return 4; // Unknown status last
+}
+/**
+ * Check if an item was completed within the last 24 hours
+ */
+function isRecentlyCompleted(item) {
+    const statusLower = item.status.toLowerCase();
+    const isDone = statusLower.includes('done') ||
+        statusLower.includes('complete') ||
+        statusLower.includes('finished');
+    if (!isDone) {
+        return true; // Not a Done item, include it
+    }
+    const now = new Date();
+    const updatedAt = new Date(item.updatedAt);
+    const hoursDiff = (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60);
+    return hoursDiff <= 24;
+}
+/**
+ * Format date for display
+ */
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+/**
+ * Group items by assignees and filter/sort them
  */
 function groupItemsByAssignees(items) {
     const userAssignments = {};
-    for (const item of items) {
+    // Filter items - only show Done items if completed within 24h
+    const filteredItems = items.filter(isRecentlyCompleted);
+    for (const item of filteredItems) {
         if (item.assignees.length === 0) {
             // Add to "Unassigned" if no assignees
             if (!userAssignments['Unassigned']) {
@@ -53773,6 +53847,18 @@ function groupItemsByAssignees(items) {
                 userAssignments[assignee].push(item);
             }
         }
+    }
+    // Sort items within each user by status priority
+    for (const user in userAssignments) {
+        userAssignments[user].sort((a, b) => {
+            const priorityA = getStatusPriority(a.status);
+            const priorityB = getStatusPriority(b.status);
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+            // If same status priority, sort by updated date (newest first)
+            return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        });
     }
     return userAssignments;
 }
@@ -53795,12 +53881,17 @@ function formatSlackMessage(userAssignments, maxItemsPerUser) {
         const hasMore = items.length > maxItemsPerUser;
         const userSection = [`*${user}* (${items.length} items):`];
         for (const item of displayItems) {
-            const typeIcon = item.type === 'Issue' ? '🐛' : item.type === 'PullRequest' ? '🔄' : '📝';
-            const statusBadge = item.status !== 'Unknown' ? `\`${item.status}\`` : '';
+            const statusEmoji = getStatusEmoji(item.status);
+            const statusBadge = item.status !== 'Unknown' ? `${item.status}` : '';
             const repoInfo = item.repository
                 ? `[${item.repository}${item.number ? `#${item.number}` : ''}]`
                 : '';
-            userSection.push(`  ${typeIcon} ${statusBadge} <${item.url}|${item.title}> ${repoInfo}`);
+            // Add completion date for Done items
+            const isDone = item.status.toLowerCase().includes('done') ||
+                item.status.toLowerCase().includes('complete') ||
+                item.status.toLowerCase().includes('finished');
+            const completionInfo = isDone ? ` (${formatDate(item.updatedAt)})` : '';
+            userSection.push(`  ${statusEmoji} ${statusBadge} <${item.url}|${item.title}>${completionInfo} ${repoInfo}`);
         }
         if (hasMore) {
             userSection.push(`  _... and ${items.length - maxItemsPerUser} more items_`);
@@ -53821,7 +53912,7 @@ async function sendSlackMessage(botToken, channel, message) {
         await slack.chat.postMessage({
             channel,
             text: message,
-            username: 'GitHub Projects Bot',
+            username: 'Agglayer Github Project Notifier',
             icon_emoji: ':github:'
         });
     }
