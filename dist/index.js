@@ -53628,9 +53628,10 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                   hasNextPage
                   endCursor
                 }
-                nodes {
+                                nodes {
                   id
-                                  fieldValues(first: 20) {
+                  updatedAt
+                  fieldValues(first: 20) {
                   nodes {
                     __typename
                     ... on ProjectV2ItemFieldTextValue {
@@ -53743,15 +53744,14 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
             for (const item of project.items.nodes) {
                 // Handle items with null/undefined content but try to extract from field values
                 if (!item.content) {
-                    coreExports.info(`⚠️ Item with null content: ID=${item.id} | FieldValues: ${item.fieldValues?.nodes?.length || 0}`);
+                    coreExports.info(`⚠️ Item with null content: ID=${item.id} | FieldValues: ${item.fieldValues?.nodes?.length || 0} | ProjectUpdatedAt: ${item.updatedAt}`);
                     // Try to extract information from field values
                     let title = 'Unknown Title';
                     let status = 'Unknown';
                     const assignees = [];
-                    let createdAt = new Date().toISOString();
-                    let updatedAt = new Date().toISOString();
-                    const originalCreatedAt = createdAt;
-                    const originalUpdatedAt = updatedAt;
+                    // Use the project item's updatedAt as the best proxy for when status was changed
+                    let createdAt = item.updatedAt || new Date().toISOString();
+                    let updatedAt = item.updatedAt || new Date().toISOString();
                     if (item.fieldValues?.nodes) {
                         // Log all field names first
                         const allFieldNames = item.fieldValues.nodes
@@ -53798,11 +53798,9 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                             }
                         }
                     }
-                    // Check if we extracted real dates or used fallbacks
-                    const usedFallbackCreated = createdAt === originalCreatedAt;
-                    const usedFallbackUpdated = updatedAt === originalUpdatedAt;
+                    // Note: Using project item's updatedAt as the best available proxy for completion time
                     coreExports.info(`📝 Processing item from field values: "${title}" | Status: ${status}`);
-                    coreExports.info(`📅 Dates - Created: ${createdAt} (fallback: ${usedFallbackCreated}) | Updated: ${updatedAt} (fallback: ${usedFallbackUpdated})`);
+                    coreExports.info(`📅 Dates - Using project item updatedAt: ${updatedAt} (this represents when the item was last modified in the project)`);
                     allItems.push({
                         id: item.id,
                         title,
