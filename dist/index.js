@@ -53610,81 +53610,96 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
             authorization: `token ${token}`
         }
     });
-    const query = `
-    query($owner: String!, $projectNumber: Int!) {
-      ${isOrg ? 'organization' : 'user'}(login: $owner) {
-        projectV2(number: $projectNumber) {
-          items(first: 100) {
-            nodes {
-              id
-              fieldValues(first: 20) {
+    // Fetch all items with pagination
+    const allItems = [];
+    let hasNextPage = true;
+    let cursor = null;
+    let pageCount = 0;
+    try {
+        while (hasNextPage) {
+            pageCount++;
+            coreExports.info(`Fetching page ${pageCount} of project items...`);
+            const query = `
+        query($owner: String!, $projectNumber: Int!, $after: String) {
+          ${isOrg ? 'organization' : 'user'}(login: $owner) {
+            projectV2(number: $projectNumber) {
+              items(first: 100, after: $after) {
+                pageInfo {
+                  hasNextPage
+                  endCursor
+                }
                 nodes {
-                  ... on ProjectV2ItemFieldTextValue {
-                    field {
-                      ... on ProjectV2FieldCommon {
+                  id
+                  fieldValues(first: 20) {
+                    nodes {
+                      ... on ProjectV2ItemFieldTextValue {
+                        field {
+                          ... on ProjectV2FieldCommon {
+                            name
+                          }
+                        }
+                        text
+                      }
+                      ... on ProjectV2ItemFieldSingleSelectValue {
+                        field {
+                          ... on ProjectV2FieldCommon {
+                            name
+                          }
+                        }
                         name
                       }
                     }
-                    text
                   }
-                  ... on ProjectV2ItemFieldSingleSelectValue {
-                    field {
-                      ... on ProjectV2FieldCommon {
+                  content {
+                    ... on Issue {
+                      title
+                      url
+                      number
+                      createdAt
+                      updatedAt
+                      assignees(first: 10) {
+                        nodes {
+                          login
+                        }
+                      }
+                      labels(first: 10) {
+                        nodes {
+                          name
+                        }
+                      }
+                      repository {
                         name
                       }
                     }
-                    name
-                  }
-                }
-              }
-              content {
-                ... on Issue {
-                  title
-                  url
-                  number
-                  createdAt
-                  updatedAt
-                  assignees(first: 10) {
-                    nodes {
-                      login
+                    ... on PullRequest {
+                      title
+                      url
+                      number
+                      createdAt
+                      updatedAt
+                      assignees(first: 10) {
+                        nodes {
+                          login
+                        }
+                      }
+                      labels(first: 10) {
+                        nodes {
+                          name
+                        }
+                      }
+                      repository {
+                        name
+                      }
                     }
-                  }
-                  labels(first: 10) {
-                    nodes {
-                      name
-                    }
-                  }
-                  repository {
-                    name
-                  }
-                }
-                ... on PullRequest {
-                  title
-                  url
-                  number
-                  createdAt
-                  updatedAt
-                  assignees(first: 10) {
-                    nodes {
-                      login
-                    }
-                  }
-                  labels(first: 10) {
-                    nodes {
-                      name
-                    }
-                  }
-                  repository {
-                    name
-                  }
-                }
-                ... on DraftIssue {
-                  title
-                  createdAt
-                  updatedAt
-                  assignees(first: 10) {
-                    nodes {
-                      login
+                    ... on DraftIssue {
+                      title
+                      createdAt
+                      updatedAt
+                      assignees(first: 10) {
+                        nodes {
+                          login
+                        }
+                      }
                     }
                   }
                 }
@@ -53692,59 +53707,63 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
             }
           }
         }
-      }
-    }
-  `;
-    try {
-        const response = (await graphqlWithAuth(query, {
-            owner,
-            projectNumber
-        }));
-        const project = response[isOrg ? 'organization' : 'user']?.projectV2;
-        if (!project) {
-            throw new Error(`Project not found: ${owner}/${projectNumber}`);
-        }
-        const items = [];
-        for (const item of project.items.nodes) {
-            if (!item.content)
-                continue;
-            const content = item.content;
-            const assignees = content.assignees?.nodes?.map((a) => a.login) || [];
-            const labels = content.labels?.nodes?.map((l) => l.name) || [];
-            // Get status from field values
-            let status = 'Unknown';
-            for (const fieldValue of item.fieldValues.nodes) {
-                if (fieldValue.field?.name === 'Status') {
-                    status = fieldValue.name || fieldValue.text || 'Unknown';
-                    break;
+      `;
+            const response = (await graphqlWithAuth(query, {
+                owner,
+                projectNumber,
+                after: cursor
+            }));
+            const project = response[isOrg ? 'organization' : 'user']?.projectV2;
+            if (!project) {
+                throw new Error(`Project not found: ${owner}/${projectNumber}`);
+            }
+            // Process items from this page
+            for (const item of project.items.nodes) {
+                if (!item.content)
+                    continue;
+                const content = item.content;
+                const assignees = content.assignees?.nodes?.map((a) => a.login) || [];
+                const labels = content.labels?.nodes?.map((l) => l.name) || [];
+                // Get status from field values
+                let status = 'Unknown';
+                for (const fieldValue of item.fieldValues.nodes) {
+                    if (fieldValue.field?.name === 'Status') {
+                        status = fieldValue.name || fieldValue.text || 'Unknown';
+                        break;
+                    }
                 }
+                let type;
+                if (content.__typename === 'Issue') {
+                    type = 'Issue';
+                }
+                else if (content.__typename === 'PullRequest') {
+                    type = 'PullRequest';
+                }
+                else {
+                    type = 'DraftIssue';
+                }
+                allItems.push({
+                    id: item.id,
+                    title: content.title,
+                    url: content.url ||
+                        `https://github.com/${owner}/projects/${projectNumber}`,
+                    status,
+                    assignees,
+                    labels,
+                    createdAt: content.createdAt,
+                    updatedAt: content.updatedAt,
+                    type,
+                    repository: content.repository?.name,
+                    number: content.number
+                });
             }
-            let type;
-            if (content.__typename === 'Issue') {
-                type = 'Issue';
-            }
-            else if (content.__typename === 'PullRequest') {
-                type = 'PullRequest';
-            }
-            else {
-                type = 'DraftIssue';
-            }
-            items.push({
-                id: item.id,
-                title: content.title,
-                url: content.url ||
-                    `https://github.com/${owner}/projects/${projectNumber}`,
-                status,
-                assignees,
-                labels,
-                createdAt: content.createdAt,
-                updatedAt: content.updatedAt,
-                type,
-                repository: content.repository?.name,
-                number: content.number
-            });
+            // Update pagination variables
+            hasNextPage = project.items.pageInfo.hasNextPage;
+            cursor = project.items.pageInfo.endCursor;
+            coreExports.info(`Page ${pageCount}: Found ${project.items.nodes.length} items. Total so far: ${allItems.length}. HasNextPage: ${hasNextPage}`);
         }
-        return items;
+        coreExports.info(`✅ Pagination complete! Fetched ${allItems.length} total items across ${pageCount} pages`);
+        return allItems;
     }
     catch (error) {
         coreExports.error(`Error fetching project data: ${error}`);
