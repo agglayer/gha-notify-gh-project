@@ -53750,10 +53750,26 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                     const assignees = [];
                     let createdAt = new Date().toISOString();
                     let updatedAt = new Date().toISOString();
+                    const originalCreatedAt = createdAt;
+                    const originalUpdatedAt = updatedAt;
                     if (item.fieldValues?.nodes) {
+                        // Log all field names first
+                        const allFieldNames = item.fieldValues.nodes
+                            .map((fv) => fv.field?.name)
+                            .filter(Boolean);
+                        coreExports.info(`📋 All field names for "${title}": ${allFieldNames.join(', ')}`);
                         for (const fieldValue of item.fieldValues.nodes) {
                             const fieldName = fieldValue.field?.name;
                             coreExports.info(`Field: ${fieldName} | Value type: ${fieldValue.__typename} | Keys: ${Object.keys(fieldValue).join(', ')}`);
+                            // Log all field values to understand the structure
+                            if (fieldValue.date) {
+                                coreExports.info(`📅 Date field found: ${fieldName} = ${fieldValue.date}`);
+                            }
+                            if (fieldValue.text &&
+                                (fieldName?.toLowerCase().includes('date') ||
+                                    fieldName?.toLowerCase().includes('time'))) {
+                                coreExports.info(`📅 Text date field found: ${fieldName} = ${fieldValue.text}`);
+                            }
                             if (fieldName === 'Title') {
                                 title = fieldValue.text || fieldValue.name || title;
                             }
@@ -53782,7 +53798,11 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                             }
                         }
                     }
+                    // Check if we extracted real dates or used fallbacks
+                    const usedFallbackCreated = createdAt === originalCreatedAt;
+                    const usedFallbackUpdated = updatedAt === originalUpdatedAt;
                     coreExports.info(`📝 Processing item from field values: "${title}" | Status: ${status}`);
+                    coreExports.info(`📅 Dates - Created: ${createdAt} (fallback: ${usedFallbackCreated}) | Updated: ${updatedAt} (fallback: ${usedFallbackUpdated})`);
                     allItems.push({
                         id: item.id,
                         title,
