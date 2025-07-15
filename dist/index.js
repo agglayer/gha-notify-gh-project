@@ -53719,8 +53719,11 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
             }
             // Process items from this page
             for (const item of project.items.nodes) {
-                if (!item.content)
+                if (!item.content) {
+                    coreExports.info(`⚠️ Skipping item with no content: ID=${item.id}`);
                     continue;
+                }
+                coreExports.info(`📝 Processing item: ${item.content.title || 'No title'} (Type: ${item.content.__typename || 'Unknown'})`);
                 const content = item.content;
                 const assignees = content.assignees?.nodes?.map((a) => a.login) || [];
                 const labels = content.labels?.nodes?.map((l) => l.name) || [];
@@ -53760,7 +53763,9 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
             // Update pagination variables
             hasNextPage = project.items.pageInfo.hasNextPage;
             cursor = project.items.pageInfo.endCursor;
-            coreExports.info(`Page ${pageCount}: Found ${project.items.nodes.length} items. Total so far: ${allItems.length}. HasNextPage: ${hasNextPage}`);
+            const itemsWithContent = project.items.nodes.filter((item) => item.content).length;
+            const itemsWithoutContent = project.items.nodes.length - itemsWithContent;
+            coreExports.info(`Page ${pageCount}: Found ${project.items.nodes.length} items (${itemsWithContent} with content, ${itemsWithoutContent} without). Total processed so far: ${allItems.length}. HasNextPage: ${hasNextPage}`);
         }
         coreExports.info(`✅ Pagination complete! Fetched ${allItems.length} total items across ${pageCount} pages`);
         return allItems;

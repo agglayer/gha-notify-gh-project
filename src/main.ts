@@ -169,7 +169,14 @@ async function fetchProjectData(
 
       // Process items from this page
       for (const item of project.items.nodes) {
-        if (!item.content) continue
+        if (!item.content) {
+          core.info(`⚠️ Skipping item with no content: ID=${item.id}`)
+          continue
+        }
+
+        core.info(
+          `📝 Processing item: ${item.content.title || 'No title'} (Type: ${item.content.__typename || 'Unknown'})`
+        )
 
         const content = item.content
         const assignees =
@@ -215,8 +222,12 @@ async function fetchProjectData(
       hasNextPage = project.items.pageInfo.hasNextPage
       cursor = project.items.pageInfo.endCursor
 
+      const itemsWithContent = project.items.nodes.filter(
+        (item: any) => item.content
+      ).length
+      const itemsWithoutContent = project.items.nodes.length - itemsWithContent
       core.info(
-        `Page ${pageCount}: Found ${project.items.nodes.length} items. Total so far: ${allItems.length}. HasNextPage: ${hasNextPage}`
+        `Page ${pageCount}: Found ${project.items.nodes.length} items (${itemsWithContent} with content, ${itemsWithoutContent} without). Total processed so far: ${allItems.length}. HasNextPage: ${hasNextPage}`
       )
     }
 
