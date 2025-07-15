@@ -53720,10 +53720,10 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
             // Process items from this page
             for (const item of project.items.nodes) {
                 if (!item.content) {
-                    coreExports.info(`⚠️ Skipping item with no content: ID=${item.id}`);
+                    coreExports.info(`⚠️ Skipping item with no content: ID=${item.id} | Item keys: ${Object.keys(item).join(', ')} | FieldValues: ${item.fieldValues?.nodes?.length || 0}`);
                     continue;
                 }
-                coreExports.info(`📝 Processing item: ${item.content.title || 'No title'} (Type: ${item.content.__typename || 'Unknown'})`);
+                coreExports.info(`📝 Processing item: ${item.content.title || 'No title'} (Type: ${item.content.__typename || 'Unknown'}) | Content keys: ${Object.keys(item.content).join(', ')}`);
                 const content = item.content;
                 const assignees = content.assignees?.nodes?.map((a) => a.login) || [];
                 const labels = content.labels?.nodes?.map((l) => l.name) || [];

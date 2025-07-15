@@ -170,12 +170,14 @@ async function fetchProjectData(
       // Process items from this page
       for (const item of project.items.nodes) {
         if (!item.content) {
-          core.info(`⚠️ Skipping item with no content: ID=${item.id}`)
+          core.info(
+            `⚠️ Skipping item with no content: ID=${item.id} | Item keys: ${Object.keys(item).join(', ')} | FieldValues: ${item.fieldValues?.nodes?.length || 0}`
+          )
           continue
         }
 
         core.info(
-          `📝 Processing item: ${item.content.title || 'No title'} (Type: ${item.content.__typename || 'Unknown'})`
+          `📝 Processing item: ${item.content.title || 'No title'} (Type: ${item.content.__typename || 'Unknown'}) | Content keys: ${Object.keys(item.content).join(', ')}`
         )
 
         const content = item.content
