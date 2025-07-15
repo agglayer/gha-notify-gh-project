@@ -263,24 +263,37 @@ function getStatusPriority(status: string): number {
 }
 
 /**
- * Check if an item was completed within the last 24 hours
+ * Check if an item should be included in the output
+ * - Always include Todo and In Progress items
+ * - Only include Done items if completed within the last 24 hours
  */
-function isRecentlyCompleted(item: ProjectItem): boolean {
+function shouldIncludeItem(item: ProjectItem): boolean {
   const statusLower = item.status.toLowerCase()
   const isDone =
     statusLower.includes('done') ||
     statusLower.includes('complete') ||
     statusLower.includes('finished')
 
+  // Debug logging to understand what's happening
+  core.info(
+    `Item: "${item.title}" | Status: "${item.status}" | isDone: ${isDone}`
+  )
+
   if (!isDone) {
-    return true // Not a Done item, include it
+    return true // Always include non-Done items (Todo, In Progress, etc.)
   }
 
+  // For Done items, only include if completed within 24 hours
   const now = new Date()
   const updatedAt = new Date(item.updatedAt)
   const hoursDiff = (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60)
 
-  return hoursDiff <= 24
+  const shouldInclude = hoursDiff <= 24
+  core.info(
+    `Done item: "${item.title}" | Hours since update: ${hoursDiff.toFixed(1)} | Including: ${shouldInclude}`
+  )
+
+  return shouldInclude
 }
 
 /**
@@ -302,10 +315,8 @@ function formatDate(dateString: string): string {
 function groupItemsByAssignees(items: ProjectItem[]): UserAssignments {
   const userAssignments: UserAssignments = {}
 
-  // Filter items - only show Done items if completed within 24h
-  const filteredItems = items.filter(isRecentlyCompleted)
-
-  for (const item of filteredItems) {
+  // First, group all items by assignees (without filtering)
+  for (const item of items) {
     if (item.assignees.length === 0) {
       // Add to "Unassigned" if no assignees
       if (!userAssignments['Unassigned']) {
@@ -322,6 +333,36 @@ function groupItemsByAssignees(items: ProjectItem[]): UserAssignments {
       }
     }
   }
+
+  // Debug: log users before filtering
+  core.info(
+    `Users before filtering: ${Object.keys(userAssignments).join(', ')}`
+  )
+  for (const user in userAssignments) {
+    core.info(
+      `${user}: ${userAssignments[user].length} items (${userAssignments[user].map((item) => item.status).join(', ')})`
+    )
+  }
+
+  // Now filter items within each user's list - only show Done items if completed within 24h
+  for (const user in userAssignments) {
+    const beforeCount = userAssignments[user].length
+    userAssignments[user] = userAssignments[user].filter(shouldIncludeItem)
+    const afterCount = userAssignments[user].length
+
+    core.info(
+      `${user}: ${beforeCount} items → ${afterCount} items after filtering`
+    )
+
+    // Remove users who have no items left after filtering
+    if (userAssignments[user].length === 0) {
+      core.info(`Removing ${user} - no items left after filtering`)
+      delete userAssignments[user]
+    }
+  }
+
+  // Debug: log users after filtering
+  core.info(`Users after filtering: ${Object.keys(userAssignments).join(', ')}`)
 
   // Sort items within each user by status priority
   for (const user in userAssignments) {
