@@ -1,62 +1,156 @@
 /**
  * Unit tests for the action's main functionality, src/main.ts
- *
- * To mock dependencies in ESM, you can create fixtures that export mock
- * functions and objects. For example, the core module is mocked in this test,
- * so that the actual '@actions/core' module is not imported.
  */
+
 import { jest } from '@jest/globals'
-import * as core from '../__fixtures__/core.js'
-import { wait } from '../__fixtures__/wait.js'
+import * as core from '@actions/core'
+import * as main from '../src/main'
 
-// Mocks should be declared before the module being tested is imported.
-jest.unstable_mockModule('@actions/core', () => core)
-jest.unstable_mockModule('../src/wait.js', () => ({ wait }))
+// Mock the GitHub Actions core library
+let debugMock: any
+let errorMock: any
+let getInputMock: any
+let infoMock: any
+let setFailedMock: any
+let setOutputMock: any
 
-// The module being tested should be imported dynamically. This ensures that the
-// mocks are used in place of any actual dependencies.
-const { run } = await import('../src/main.js')
-
-describe('main.ts', () => {
+describe('action', () => {
   beforeEach(() => {
-    // Set the action's inputs as return values from core.getInput().
-    core.getInput.mockImplementation(() => '500')
+    jest.clearAllMocks()
 
-    // Mock the wait function so that it does not actually wait.
-    wait.mockImplementation(() => Promise.resolve('done!'))
+    debugMock = jest.spyOn(core, 'debug').mockImplementation(() => {})
+    errorMock = jest.spyOn(core, 'error').mockImplementation(() => {})
+    getInputMock = jest.spyOn(core, 'getInput').mockImplementation(() => '')
+    infoMock = jest.spyOn(core, 'info').mockImplementation(() => {})
+    setFailedMock = jest.spyOn(core, 'setFailed').mockImplementation(() => {})
+    setOutputMock = jest.spyOn(core, 'setOutput').mockImplementation(() => {})
   })
 
-  afterEach(() => {
-    jest.resetAllMocks()
-  })
+  it('should require github-token input', async () => {
+    getInputMock.mockImplementation((name: string): string => {
+      switch (name) {
+        case 'github-token':
+          return ''
+        case 'project-url':
+          return 'https://github.com/orgs/test/projects/1'
+        case 'slack-bot-token':
+          return 'xoxb-test-token'
+        case 'slack-channel':
+          return '#test-channel'
+        case 'max-items-per-user':
+          return '10'
+        default:
+          return ''
+      }
+    })
 
-  it('Sets the time output', async () => {
-    await run()
+    await main.run()
 
-    // Verify the time output was set.
-    expect(core.setOutput).toHaveBeenNthCalledWith(
-      1,
-      'time',
-      // Simple regex to match a time string in the format HH:MM:SS.
-      expect.stringMatching(/^\d{2}:\d{2}:\d{2}/)
+    expect(setFailedMock).toHaveBeenCalledWith(
+      'Missing required inputs: github-token, project-url, slack-bot-token, and slack-channel are required'
     )
   })
 
-  it('Sets a failed status', async () => {
-    // Clear the getInput mock and return an invalid value.
-    core.getInput.mockClear().mockReturnValueOnce('this is not a number')
+  it('should require project-url input', async () => {
+    getInputMock.mockImplementation((name: string): string => {
+      switch (name) {
+        case 'github-token':
+          return 'ghp_test'
+        case 'project-url':
+          return ''
+        case 'slack-bot-token':
+          return 'xoxb-test-token'
+        case 'slack-channel':
+          return '#test-channel'
+        case 'max-items-per-user':
+          return '10'
+        default:
+          return ''
+      }
+    })
 
-    // Clear the wait mock and return a rejected promise.
-    wait
-      .mockClear()
-      .mockRejectedValueOnce(new Error('milliseconds is not a number'))
+    await main.run()
 
-    await run()
-
-    // Verify that the action was marked as failed.
-    expect(core.setFailed).toHaveBeenNthCalledWith(
-      1,
-      'milliseconds is not a number'
+    expect(setFailedMock).toHaveBeenCalledWith(
+      'Missing required inputs: github-token, project-url, slack-bot-token, and slack-channel are required'
     )
   })
+
+  it('should require slack-bot-token input', async () => {
+    getInputMock.mockImplementation((name: string): string => {
+      switch (name) {
+        case 'github-token':
+          return 'ghp_test'
+        case 'project-url':
+          return 'https://github.com/orgs/test/projects/1'
+        case 'slack-bot-token':
+          return ''
+        case 'slack-channel':
+          return '#test-channel'
+        case 'max-items-per-user':
+          return '10'
+        default:
+          return ''
+      }
+    })
+
+    await main.run()
+
+    expect(setFailedMock).toHaveBeenCalledWith(
+      'Missing required inputs: github-token, project-url, slack-bot-token, and slack-channel are required'
+    )
+  })
+
+  it('should require slack-channel input', async () => {
+    getInputMock.mockImplementation((name: string): string => {
+      switch (name) {
+        case 'github-token':
+          return 'ghp_test'
+        case 'project-url':
+          return 'https://github.com/orgs/test/projects/1'
+        case 'slack-bot-token':
+          return 'xoxb-test-token'
+        case 'slack-channel':
+          return ''
+        case 'max-items-per-user':
+          return '10'
+        default:
+          return ''
+      }
+    })
+
+    await main.run()
+
+    expect(setFailedMock).toHaveBeenCalledWith(
+      'Missing required inputs: github-token, project-url, slack-bot-token, and slack-channel are required'
+    )
+  })
+
+  it('should fail on invalid project URL format', async () => {
+    getInputMock.mockImplementation((name: string): string => {
+      switch (name) {
+        case 'github-token':
+          return 'ghp_test'
+        case 'project-url':
+          return 'https://invalid-url'
+        case 'slack-bot-token':
+          return 'xoxb-test-token'
+        case 'slack-channel':
+          return '#test-channel'
+        case 'max-items-per-user':
+          return '10'
+        default:
+          return ''
+      }
+    })
+
+    await main.run()
+
+    expect(setFailedMock).toHaveBeenCalledWith(
+      'Invalid project URL format: https://invalid-url'
+    )
+  })
+
+  // Note: Testing the full GraphQL flow would require complex mocking
+  // The above tests validate input parsing and error handling
 })
