@@ -77,6 +77,7 @@ async function fetchProjectData(
                 }
                                 nodes {
                   id
+                  databaseId
                   updatedAt
                   fieldValues(first: 20) {
                   nodes {
@@ -116,6 +117,29 @@ async function fetchProjectData(
                         }
                       }
                       date
+                    }
+                    ... on ProjectV2ItemFieldRepositoryValue {
+                      field {
+                        ... on ProjectV2FieldCommon {
+                          name
+                        }
+                      }
+                      repository {
+                        name
+                        url
+                      }
+                    }
+                    ... on ProjectV2ItemFieldPullRequestValue {
+                      field {
+                        ... on ProjectV2FieldCommon {
+                          name
+                        }
+                      }
+                      pullRequest {
+                        number
+                        url
+                        title
+                      }
                     }
                   }
                 }
@@ -207,33 +231,31 @@ async function fetchProjectData(
           let createdAt = item.updatedAt || new Date().toISOString()
           let updatedAt = item.updatedAt || new Date().toISOString()
 
+          // Extract itemId - use databaseId if available, otherwise full GraphQL ID
+          const itemId = item.databaseId || item.id
+          core.info(
+            `🔍 Item ID: ${itemId} (databaseId: ${item.databaseId}, id: ${item.id}) for "${title}"`
+          )
+          const baseUrl = isOrg
+            ? `https://github.com/orgs/${owner}/projects/${projectNumber}`
+            : `https://github.com/users/${owner}/projects/${projectNumber}`
+          let itemUrl = `${baseUrl}?pane=issue&itemId=${itemId}`
+
           if (item.fieldValues?.nodes) {
-            // Log all field names first
-            const allFieldNames = item.fieldValues.nodes
-              .map((fv: any) => fv.field?.name)
-              .filter(Boolean)
-            core.info(
-              `📋 All field names for "${title}": ${allFieldNames.join(', ')}`
-            )
+            // Process field values
             for (const fieldValue of item.fieldValues.nodes) {
               const fieldName = fieldValue.field?.name
-              core.info(
-                `Field: ${fieldName} | Value type: ${fieldValue.__typename} | Keys: ${Object.keys(fieldValue).join(', ')}`
-              )
+              // Only log field details for debugging assignees
+              if (fieldName === 'Assignees') {
+                core.info(
+                  `Field: ${fieldName} | Value type: ${fieldValue.__typename}`
+                )
+              }
 
-              // Log all field values to understand the structure
+              // Log useful field information
               if (fieldValue.date) {
                 core.info(
                   `📅 Date field found: ${fieldName} = ${fieldValue.date}`
-                )
-              }
-              if (
-                fieldValue.text &&
-                (fieldName?.toLowerCase().includes('date') ||
-                  fieldName?.toLowerCase().includes('time'))
-              ) {
-                core.info(
-                  `📅 Text date field found: ${fieldName} = ${fieldValue.text}`
                 )
               }
 
@@ -242,17 +264,17 @@ async function fetchProjectData(
               } else if (fieldName === 'Status') {
                 status = fieldValue.name || fieldValue.text || status
               } else if (fieldName === 'Assignees') {
-                core.info(
-                  `Assignee field structure: ${JSON.stringify(fieldValue, null, 2)}`
-                )
                 // Extract assignees from the field value
                 if (fieldValue.users?.nodes) {
-                  assignees.push(
-                    ...fieldValue.users.nodes.map((user: any) => user.login)
+                  const userLogins = fieldValue.users.nodes.map(
+                    (user: any) => user.login
                   )
+                  assignees.push(...userLogins)
+                  core.info(`👤 Found assignees: ${userLogins.join(', ')}`)
                 } else if (fieldValue.text) {
                   // Handle text-based assignee field
                   assignees.push(fieldValue.text)
+                  core.info(`👤 Found assignee (text): ${fieldValue.text}`)
                 }
               } else if (
                 fieldName === 'Created' ||
@@ -265,6 +287,24 @@ async function fetchProjectData(
                 fieldName === 'Last updated'
               ) {
                 updatedAt = fieldValue.date || fieldValue.text || updatedAt
+              }
+
+              // Log repository and PR information for debugging if needed
+              if (
+                fieldValue.__typename ===
+                  'ProjectV2ItemFieldPullRequestValue' &&
+                fieldValue.pullRequest?.url
+              ) {
+                core.info(
+                  `🔗 Found PR: ${fieldValue.pullRequest.url} (will use project URL instead)`
+                )
+              } else if (
+                fieldValue.__typename === 'ProjectV2ItemFieldRepositoryValue' &&
+                fieldValue.repository?.url
+              ) {
+                core.info(
+                  `🏪 Found repository: ${fieldValue.repository.name} (will use project URL instead)`
+                )
               }
             }
           }
@@ -281,7 +321,7 @@ async function fetchProjectData(
           allItems.push({
             id: item.id,
             title,
-            url: `https://github.com/orgs/${owner}/projects/${projectNumber}`,
+            url: itemUrl,
             status,
             assignees,
             labels: [],
@@ -321,12 +361,17 @@ async function fetchProjectData(
           type = 'DraftIssue'
         }
 
+        // Construct project URL with item opened in right pane
+        const baseUrl = isOrg
+          ? `https://github.com/orgs/${owner}/projects/${projectNumber}`
+          : `https://github.com/users/${owner}/projects/${projectNumber}`
+        const itemId = item.databaseId || item.id
+        const itemUrl = `${baseUrl}?pane=issue&itemId=${itemId}`
+
         allItems.push({
           id: item.id,
           title: content.title,
-          url:
-            content.url ||
-            `https://github.com/${owner}/projects/${projectNumber}`,
+          url: itemUrl,
           status,
           assignees,
           labels,
@@ -422,32 +467,35 @@ function getStatusPriority(status: string): number {
 /**
  * Check if an item should be included in the output
  * - Always include Todo and In Progress items
- * - Only include Done items if completed within the last 24 hours
+ * - Only include Done items if completed within the specified time window
  */
-function shouldIncludeItem(item: ProjectItem): boolean {
+function shouldIncludeItem(item: ProjectItem, doneItemsDays: number): boolean {
   const statusLower = item.status.toLowerCase()
   const isDone =
     statusLower.includes('done') ||
     statusLower.includes('complete') ||
     statusLower.includes('finished')
 
-  // Debug logging to understand what's happening
-  core.info(
-    `Item: "${item.title}" | Status: "${item.status}" | isDone: ${isDone}`
-  )
+  // Debug logging for Done items only
+  if (isDone) {
+    core.info(
+      `Item: "${item.title}" | Status: "${item.status}" | isDone: ${isDone}`
+    )
+  }
 
   if (!isDone) {
     return true // Always include non-Done items (Todo, In Progress, etc.)
   }
 
-  // For Done items, only include if completed within 24 hours
+  // For Done items, only include if completed within specified days
   const now = new Date()
   const updatedAt = new Date(item.updatedAt)
   const hoursDiff = (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60)
+  const daysDiff = hoursDiff / 24
 
-  const shouldInclude = hoursDiff <= 24
+  const shouldInclude = daysDiff <= doneItemsDays
   core.info(
-    `Done item: "${item.title}" | Hours since update: ${hoursDiff.toFixed(1)} | Including: ${shouldInclude}`
+    `Done item: "${item.title}" | Days since update: ${daysDiff.toFixed(1)} | Threshold: ${doneItemsDays} days | Including: ${shouldInclude}`
   )
 
   return shouldInclude
@@ -471,7 +519,10 @@ function formatDate(dateString: string): string {
 /**
  * Group items by assignees and filter/sort them
  */
-function groupItemsByAssignees(items: ProjectItem[]): UserAssignments {
+function groupItemsByAssignees(
+  items: ProjectItem[],
+  doneItemsDays: number
+): UserAssignments {
   const userAssignments: UserAssignments = {}
 
   // First, group all items by assignees (without filtering)
@@ -503,10 +554,12 @@ function groupItemsByAssignees(items: ProjectItem[]): UserAssignments {
     )
   }
 
-  // Now filter items within each user's list - only show Done items if completed within 24h
+  // Now filter items within each user's list - only show Done items if completed within specified days
   for (const user in userAssignments) {
     const beforeCount = userAssignments[user].length
-    userAssignments[user] = userAssignments[user].filter(shouldIncludeItem)
+    userAssignments[user] = userAssignments[user].filter((item) =>
+      shouldIncludeItem(item, doneItemsDays)
+    )
     const afterCount = userAssignments[user].length
 
     core.info(
@@ -637,6 +690,7 @@ export async function run(): Promise<void> {
     const slackBotToken = core.getInput('slack-bot-token')
     const slackChannel = core.getInput('slack-channel')
     const maxItemsPerUser = parseInt(core.getInput('max-items-per-user'), 10)
+    const doneItemsDays = parseInt(core.getInput('done-items-days'), 10)
 
     // Validate inputs
     if (!githubToken || !projectUrl || !slackBotToken || !slackChannel) {
@@ -663,7 +717,7 @@ export async function run(): Promise<void> {
     core.info(`📥 Retrieved ${items.length} items from project`)
 
     // Group items by assignees
-    const userAssignments = groupItemsByAssignees(items)
+    const userAssignments = groupItemsByAssignees(items, doneItemsDays)
     const userCount = Object.keys(userAssignments).length
     core.info(`👥 Found ${userCount} assignees`)
 

@@ -88,6 +88,7 @@ jobs:
 | `slack-channel`      | Slack channel to post to (e.g., #general or C1234567890)            | ✅       |             |
 | `assignee-field`     | Name of the assignee field in the project                           | ❌       | `Assignees` |
 | `max-items-per-user` | Maximum number of items to show per user                            | ❌       | `10`        |
+| `done-items-days`    | Show Done items only if completed within this many days             | ❌       | `1`         |
 
 ## Outputs
 
@@ -153,8 +154,9 @@ use it immediately with the pre-configured organization secret:
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }} # PAT if org project, see below
     project-url: 'https://github.com/orgs/agglayer/projects/1'
-    slack-bot-token: ${{ secrets.SLACK_APP_TOKEN_AGGLAYER_NOTIFY_GH_PROJECT }}
-    slack-channel: '#your-channel'
+          slack-bot-token: ${{ secrets.SLACK_APP_TOKEN_AGGLAYER_NOTIFY_GH_PROJECT }}
+      slack-channel: '#your-channel'
+      done-items-days: 2  # Optional: Show Done items from last 2 days (default: 1)
 ```
 
 Just invite the bot to your desired channel with `/invite @Agglayer Github Project Notifier`

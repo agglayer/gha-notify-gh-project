@@ -53630,6 +53630,7 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                 }
                                 nodes {
                   id
+                  databaseId
                   updatedAt
                   fieldValues(first: 20) {
                   nodes {
@@ -53669,6 +53670,29 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                         }
                       }
                       date
+                    }
+                    ... on ProjectV2ItemFieldRepositoryValue {
+                      field {
+                        ... on ProjectV2FieldCommon {
+                          name
+                        }
+                      }
+                      repository {
+                        name
+                        url
+                      }
+                    }
+                    ... on ProjectV2ItemFieldPullRequestValue {
+                      field {
+                        ... on ProjectV2FieldCommon {
+                          name
+                        }
+                      }
+                      pullRequest {
+                        number
+                        url
+                        title
+                      }
                     }
                   }
                 }
@@ -53752,23 +53776,24 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                     // Use the project item's updatedAt as the best proxy for when status was changed
                     let createdAt = item.updatedAt || new Date().toISOString();
                     let updatedAt = item.updatedAt || new Date().toISOString();
+                    // Extract itemId - use databaseId if available, otherwise full GraphQL ID
+                    const itemId = item.databaseId || item.id;
+                    coreExports.info(`🔍 Item ID: ${itemId} (databaseId: ${item.databaseId}, id: ${item.id}) for "${title}"`);
+                    const baseUrl = isOrg
+                        ? `https://github.com/orgs/${owner}/projects/${projectNumber}`
+                        : `https://github.com/users/${owner}/projects/${projectNumber}`;
+                    let itemUrl = `${baseUrl}?pane=issue&itemId=${itemId}`;
                     if (item.fieldValues?.nodes) {
-                        // Log all field names first
-                        const allFieldNames = item.fieldValues.nodes
-                            .map((fv) => fv.field?.name)
-                            .filter(Boolean);
-                        coreExports.info(`📋 All field names for "${title}": ${allFieldNames.join(', ')}`);
+                        // Process field values
                         for (const fieldValue of item.fieldValues.nodes) {
                             const fieldName = fieldValue.field?.name;
-                            coreExports.info(`Field: ${fieldName} | Value type: ${fieldValue.__typename} | Keys: ${Object.keys(fieldValue).join(', ')}`);
-                            // Log all field values to understand the structure
+                            // Only log field details for debugging assignees
+                            if (fieldName === 'Assignees') {
+                                coreExports.info(`Field: ${fieldName} | Value type: ${fieldValue.__typename}`);
+                            }
+                            // Log useful field information
                             if (fieldValue.date) {
                                 coreExports.info(`📅 Date field found: ${fieldName} = ${fieldValue.date}`);
-                            }
-                            if (fieldValue.text &&
-                                (fieldName?.toLowerCase().includes('date') ||
-                                    fieldName?.toLowerCase().includes('time'))) {
-                                coreExports.info(`📅 Text date field found: ${fieldName} = ${fieldValue.text}`);
                             }
                             if (fieldName === 'Title') {
                                 title = fieldValue.text || fieldValue.name || title;
@@ -53777,14 +53802,16 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                                 status = fieldValue.name || fieldValue.text || status;
                             }
                             else if (fieldName === 'Assignees') {
-                                coreExports.info(`Assignee field structure: ${JSON.stringify(fieldValue, null, 2)}`);
                                 // Extract assignees from the field value
                                 if (fieldValue.users?.nodes) {
-                                    assignees.push(...fieldValue.users.nodes.map((user) => user.login));
+                                    const userLogins = fieldValue.users.nodes.map((user) => user.login);
+                                    assignees.push(...userLogins);
+                                    coreExports.info(`👤 Found assignees: ${userLogins.join(', ')}`);
                                 }
                                 else if (fieldValue.text) {
                                     // Handle text-based assignee field
                                     assignees.push(fieldValue.text);
+                                    coreExports.info(`👤 Found assignee (text): ${fieldValue.text}`);
                                 }
                             }
                             else if (fieldName === 'Created' ||
@@ -53796,6 +53823,16 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                                 fieldName === 'Last updated') {
                                 updatedAt = fieldValue.date || fieldValue.text || updatedAt;
                             }
+                            // Log repository and PR information for debugging if needed
+                            if (fieldValue.__typename ===
+                                'ProjectV2ItemFieldPullRequestValue' &&
+                                fieldValue.pullRequest?.url) {
+                                coreExports.info(`🔗 Found PR: ${fieldValue.pullRequest.url} (will use project URL instead)`);
+                            }
+                            else if (fieldValue.__typename === 'ProjectV2ItemFieldRepositoryValue' &&
+                                fieldValue.repository?.url) {
+                                coreExports.info(`🏪 Found repository: ${fieldValue.repository.name} (will use project URL instead)`);
+                            }
                         }
                     }
                     // Note: Using project item's updatedAt as the best available proxy for completion time
@@ -53804,7 +53841,7 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                     allItems.push({
                         id: item.id,
                         title,
-                        url: `https://github.com/orgs/${owner}/projects/${projectNumber}`,
+                        url: itemUrl,
                         status,
                         assignees,
                         labels: [],
@@ -53838,11 +53875,16 @@ async function fetchProjectData(token, owner, projectNumber, isOrg) {
                 else {
                     type = 'DraftIssue';
                 }
+                // Construct project URL with item opened in right pane
+                const baseUrl = isOrg
+                    ? `https://github.com/orgs/${owner}/projects/${projectNumber}`
+                    : `https://github.com/users/${owner}/projects/${projectNumber}`;
+                const itemId = item.databaseId || item.id;
+                const itemUrl = `${baseUrl}?pane=issue&itemId=${itemId}`;
                 allItems.push({
                     id: item.id,
                     title: content.title,
-                    url: content.url ||
-                        `https://github.com/${owner}/projects/${projectNumber}`,
+                    url: itemUrl,
                     status,
                     assignees,
                     labels,
@@ -53915,24 +53957,27 @@ function getStatusPriority(status) {
 /**
  * Check if an item should be included in the output
  * - Always include Todo and In Progress items
- * - Only include Done items if completed within the last 24 hours
+ * - Only include Done items if completed within the specified time window
  */
-function shouldIncludeItem(item) {
+function shouldIncludeItem(item, doneItemsDays) {
     const statusLower = item.status.toLowerCase();
     const isDone = statusLower.includes('done') ||
         statusLower.includes('complete') ||
         statusLower.includes('finished');
-    // Debug logging to understand what's happening
-    coreExports.info(`Item: "${item.title}" | Status: "${item.status}" | isDone: ${isDone}`);
+    // Debug logging for Done items only
+    if (isDone) {
+        coreExports.info(`Item: "${item.title}" | Status: "${item.status}" | isDone: ${isDone}`);
+    }
     if (!isDone) {
         return true; // Always include non-Done items (Todo, In Progress, etc.)
     }
-    // For Done items, only include if completed within 24 hours
+    // For Done items, only include if completed within specified days
     const now = new Date();
     const updatedAt = new Date(item.updatedAt);
     const hoursDiff = (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60);
-    const shouldInclude = hoursDiff <= 24;
-    coreExports.info(`Done item: "${item.title}" | Hours since update: ${hoursDiff.toFixed(1)} | Including: ${shouldInclude}`);
+    const daysDiff = hoursDiff / 24;
+    const shouldInclude = daysDiff <= doneItemsDays;
+    coreExports.info(`Done item: "${item.title}" | Days since update: ${daysDiff.toFixed(1)} | Threshold: ${doneItemsDays} days | Including: ${shouldInclude}`);
     return shouldInclude;
 }
 /**
@@ -53952,7 +53997,7 @@ function formatDate(dateString) {
 /**
  * Group items by assignees and filter/sort them
  */
-function groupItemsByAssignees(items) {
+function groupItemsByAssignees(items, doneItemsDays) {
     const userAssignments = {};
     // First, group all items by assignees (without filtering)
     for (const item of items) {
@@ -53978,10 +54023,10 @@ function groupItemsByAssignees(items) {
     for (const user in userAssignments) {
         coreExports.info(`${user}: ${userAssignments[user].length} items (${userAssignments[user].map((item) => item.status).join(', ')})`);
     }
-    // Now filter items within each user's list - only show Done items if completed within 24h
+    // Now filter items within each user's list - only show Done items if completed within specified days
     for (const user in userAssignments) {
         const beforeCount = userAssignments[user].length;
-        userAssignments[user] = userAssignments[user].filter(shouldIncludeItem);
+        userAssignments[user] = userAssignments[user].filter((item) => shouldIncludeItem(item, doneItemsDays));
         const afterCount = userAssignments[user].length;
         coreExports.info(`${user}: ${beforeCount} items → ${afterCount} items after filtering`);
         // Remove users who have no items left after filtering
@@ -54078,6 +54123,7 @@ async function run() {
         const slackBotToken = coreExports.getInput('slack-bot-token');
         const slackChannel = coreExports.getInput('slack-channel');
         const maxItemsPerUser = parseInt(coreExports.getInput('max-items-per-user'), 10);
+        const doneItemsDays = parseInt(coreExports.getInput('done-items-days'), 10);
         // Validate inputs
         if (!githubToken || !projectUrl || !slackBotToken || !slackChannel) {
             throw new Error('Missing required inputs: github-token, project-url, slack-bot-token, and slack-channel are required');
@@ -54090,7 +54136,7 @@ async function run() {
         const items = await fetchProjectData(githubToken, owner, projectNumber, isOrg);
         coreExports.info(`📥 Retrieved ${items.length} items from project`);
         // Group items by assignees
-        const userAssignments = groupItemsByAssignees(items);
+        const userAssignments = groupItemsByAssignees(items, doneItemsDays);
         const userCount = Object.keys(userAssignments).length;
         coreExports.info(`👥 Found ${userCount} assignees`);
         // Format message
