@@ -1,4 +1,4 @@
-# Create a GitHub Action Using TypeScript
+# GitHub Projects to Slack Summary
 
 [![GitHub Super-Linter](https://github.com/actions/typescript-action/actions/workflows/linter.yml/badge.svg)](https://github.com/super-linter/super-linter)
 ![CI](https://github.com/actions/typescript-action/actions/workflows/ci.yml/badge.svg)
@@ -6,300 +6,314 @@
 [![CodeQL](https://github.com/actions/typescript-action/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/actions/typescript-action/actions/workflows/codeql-analysis.yml)
 [![Coverage](./badges/coverage.svg)](./badges/coverage.svg)
 
-Use this template to bootstrap the creation of a TypeScript action. :rocket:
+A GitHub Action that publishes summaries of GitHub Projects to Slack, showing
+tasks/issues grouped by engineers with all relevant fields. Perfect for standups
+and project status tracking.
 
-This template includes compilation support, tests, a validation workflow,
-publishing, and versioning guidance.
+## Features
 
-If you are new, there's also a simpler introduction in the
-[Hello world JavaScript action repository](https://github.com/actions/hello-world-javascript-action).
+- 📋 **Project Summaries**: Fetches all items from GitHub Projects (V2)
+- 👥 **Engineer Grouping**: Groups tasks/issues by assigned engineers
+- 📊 **Rich Information**: Shows item type, status, repository, and issue
+  numbers
+- 🔄 **Multiple Item Types**: Supports Issues, Pull Requests, and Draft Issues
+- 📱 **Slack App Integration**: Uses Slack Bot tokens for secure, easy setup
+- ⚙️ **Customizable**: Configurable item limits and channel targeting
 
-## Create Your Own Action
+## Usage
 
-To create your own action, you can use this repository as a template! Just
-follow the below instructions:
+### Basic Usage
 
-1. Click the **Use this template** button at the top of the repository
-1. Select **Create a new repository**
-1. Select an owner and name for your new repository
-1. Click **Create repository**
-1. Clone your new repository
+```yaml
+name: Project Summary
+on:
+  schedule:
+    - cron: '0 9 * * 1-5' # Monday-Friday at 9 AM
+  workflow_dispatch: # Allow manual triggering
 
-> [!IMPORTANT]
->
-> Make sure to remove or update the [`CODEOWNERS`](./CODEOWNERS) file! For
-> details on how to use this file, see
-> [About code owners](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners).
+permissions:
+  contents: read
 
-## Initial Setup
+jobs:
+  slack-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Project Summary to Slack
+        uses: agglayer/gha-notify-gh-project@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          project-url: 'https://github.com/orgs/your-org/projects/1'
+          slack-bot-token: ${{
+            secrets.SLACK_APP_TOKEN_AGGLAYER_NOTIFY_GH_PROJECT }} # Pre-configured org secret
+          slack-channel: '#standup'
+```
 
-After you've cloned the repository to your local machine or codespace, you'll
-need to perform some initial setup steps before you can develop your action.
+### Advanced Usage
 
-> [!NOTE]
->
-> You'll need to have a reasonably modern version of
-> [Node.js](https://nodejs.org) handy (20.x or later should work!). If you are
-> using a version manager like [`nodenv`](https://github.com/nodenv/nodenv) or
-> [`fnm`](https://github.com/Schniz/fnm), this template has a `.node-version`
-> file at the root of the repository that can be used to automatically switch to
-> the correct version when you `cd` into the repository. Additionally, this
-> `.node-version` file is used by GitHub Actions in any `actions/setup-node`
-> actions.
+```yaml
+name: Project Summary
+on:
+  schedule:
+    - cron: '0 9 * * 1-5' # Monday-Friday at 9 AM
+  workflow_dispatch:
 
-1. :hammer_and_wrench: Install the dependencies
+permissions:
+  contents: read
+
+jobs:
+  slack-summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Project Summary to Slack
+        uses: agglayer/gha-notify-gh-project@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          project-url: 'https://github.com/orgs/your-org/projects/1'
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel: '#standup'
+          max-items-per-user: '5'
+```
+
+> **Note for agglayer users**: Replace `SLACK_BOT_TOKEN` with
+> `SLACK_APP_TOKEN_AGGLAYER_NOTIFY_GH_PROJECT` to use the pre-configured
+> organization secret.
+
+## Inputs
+
+| Input                | Description                                                         | Required | Default     |
+| -------------------- | ------------------------------------------------------------------- | -------- | ----------- |
+| `github-token`       | GitHub token with access to read projects                           | ✅       |             |
+| `project-url`        | GitHub Project URL (e.g., https://github.com/orgs/myorg/projects/1) | ✅       |             |
+| `slack-bot-token`    | Slack Bot Token (starts with xoxb-)                                 | ✅       |             |
+| `slack-channel`      | Slack channel to post to (e.g., #general or C1234567890)            | ✅       |             |
+| `assignee-field`     | Name of the assignee field in the project                           | ❌       | `Assignees` |
+| `max-items-per-user` | Maximum number of items to show per user                            | ❌       | `10`        |
+| `done-items-days`    | Show Done items only if completed within this many days             | ❌       | `1`         |
+
+## Outputs
+
+| Output         | Description                                        |
+| -------------- | -------------------------------------------------- |
+| `summary-sent` | Whether the summary was successfully sent to Slack |
+| `total-items`  | Total number of items processed                    |
+| `users-count`  | Number of users with assigned items                |
+
+## Setup
+
+### 1. GitHub Token
+
+The action requires a GitHub token with access to GitHub Projects V2.
+**Important**: `GITHUB_TOKEN` has limited access to organization projects and
+may not work for all scenarios.
+
+#### Using GITHUB_TOKEN (Limited Support)
+
+The default `GITHUB_TOKEN` can only access projects in certain cases:
+
+- **Repository projects**: Works if the project is linked to the repository
+- **Organization projects**: May fail with "Could not resolve to ProjectV2"
+  error
+
+Set minimal permissions in your workflow:
+
+```yaml
+permissions:
+  contents: read
+```
+
+#### Using Personal Access Token (Recommended for Organization Projects)
+
+For reliable access to organization projects, create a personal access token
+with:
+
+- `read:org` (to access organization resources)
+- `read:project` (to read project data)
+
+1. Go to GitHub Settings > Developer settings > Personal access tokens >
+   Fine-grained tokens
+2. Create a token with the above permissions
+3. Add it as a repository secret named `GITHUB_PAT`
+4. Use `github-token: ${{ secrets.GITHUB_PAT }}` in your workflow
+
+**For agglayer users**: The pre-configured token already has the necessary
+permissions.
+
+### 2. Slack App Setup
+
+Instead of using webhooks, this action uses a Slack App which is more secure and
+easier to set up:
+
+#### Option A: For agglayer Organization (Instant Use)
+
+If you're using this action within the `agglayer` GitHub organization, you can
+use it immediately with the pre-configured organization secret:
+
+```yaml
+- name: Send Project Summary to Slack
+  uses: agglayer/gha-notify-gh-project@v1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }} # PAT if org project, see below
+    project-url: 'https://github.com/orgs/agglayer/projects/1'
+          slack-bot-token: ${{ secrets.SLACK_APP_TOKEN_AGGLAYER_NOTIFY_GH_PROJECT }}
+      slack-channel: '#your-channel'
+      done-items-days: 2  # Optional: Show Done items from last 2 days (default: 1)
+```
+
+Just invite the bot to your desired channel with `/invite @Agglayer Github Project Notifier`
+and you're ready to go!
+
+#### Option B: Use the Pre-built Slack App (Other Organizations)
+
+1. **Install the App**: Click the "Add to Slack" button below to install the
+   pre-built app to your workspace
+
+   [![Add to Slack](https://platform.slack-edge.com/img/add_to_slack.png)](https://slack.com/oauth/v2/authorize?client_id=YOUR_CLIENT_ID&scope=chat:write&user_scope=)
+
+2. **Get the Bot Token**: After installation, you'll receive a Bot User OAuth
+   Token that starts with `xoxb-`
+
+3. **Add the Token as a Secret**: In your GitHub repository, go to Settings >
+   Secrets and Variables > Actions, then add a new secret named
+   `SLACK_BOT_TOKEN` with your bot token
+
+4. **Invite the Bot**: You must manually invite the bot to each channel where
+   you want to receive summaries by typing `/invite @GitHub Projects Bot` in the
+   channel
+
+#### Option C: Create Your Own Slack App
+
+1. **Create a Slack App**: Go to
+   [api.slack.com/apps](https://api.slack.com/apps) and create a new app
+2. **Configure OAuth Scopes**: In "OAuth & Permissions", add this Bot Token
+   Scope:
+   - `chat:write` - Send messages to channels the bot is a member of
+3. **Install the App**: Click "Install to Workspace" and authorize the app
+4. **Get the Bot Token**: Copy the "Bot User OAuth Token" (starts with `xoxb-`)
+5. **Add as Secret**: Add the token as `SLACK_BOT_TOKEN` in your GitHub
+   repository secrets
+6. **Invite the Bot**: You must manually invite the bot to each channel where
+   you want to receive summaries by typing `/invite @YourBotName` in the channel
+
+### 3. Project URL
+
+The action supports both organization and user projects:
+
+- Organization projects: `https://github.com/orgs/your-org/projects/1`
+- User projects: `https://github.com/users/your-username/projects/1`
+
+### 4. Channel Configuration
+
+You can specify the channel in several ways:
+
+- Channel name: `#general`
+- Channel ID: `C1234567890`
+- Direct message: `@username`
+
+**Important**: The bot must be manually invited to each channel before it can
+post messages. Use `/invite @YourBotName` in the target channel.
+
+## Troubleshooting
+
+### "Could not resolve to a ProjectV2 with the number X"
+
+This error occurs when the GitHub token cannot access the specified project.
+Common causes:
+
+1. **Project doesn't exist**: Verify the project URL and number are correct
+2. **Using GITHUB_TOKEN with organization projects**: `GITHUB_TOKEN` has limited
+   access to organization projects
+3. **Missing permissions**: The token lacks necessary permissions
+
+**Solutions:**
+
+- **For organization projects**: Use a Personal Access Token instead of
+  `GITHUB_TOKEN`
+- **Check project URL**: Ensure the project exists at the specified URL
+- **Verify project number**: The number in the URL should match an existing
+  project
+
+### Project Access Permissions
+
+- **Repository projects**: `GITHUB_TOKEN` usually works
+- **Organization projects**: Requires Personal Access Token with `read:org` and
+  `read:project` permissions
+- **Private projects**: Ensure the token has access to the
+  organization/repository
+
+## Example Output
+
+The action will send a message to Slack that looks like this:
+
+```
+📋 Project Summary
+12 items across 4 assignees
+
+alice (3 items):
+  🐛 `In Progress` Fix authentication bug [frontend#123]
+  🔄 `Review` Add dark mode support [frontend#124]
+  📝 `Todo` Update documentation
+
+bob (2 items):
+  🐛 `In Progress` Database migration [backend#456]
+  🔄 `Ready` API endpoint refactor [backend#457]
+
+charlie (1 items):
+  📝 `Todo` Research new framework
+
+Unassigned (6 items):
+  🐛 `Backlog` Performance optimization [frontend#125]
+  🔄 `Todo` Code review process [meta#789]
+  ... and 4 more items
+```
+
+## Development
+
+### Prerequisites
+
+- Node.js 20.x or later
+- npm
+
+### Setup
+
+1. Clone the repository
+2. Install dependencies:
 
    ```bash
    npm install
    ```
 
-1. :building_construction: Package the TypeScript for distribution
+3. Build the action:
 
    ```bash
    npm run bundle
    ```
 
-1. :white_check_mark: Run the tests
-
+4. Run tests:
    ```bash
-   $ npm test
-
-   PASS  ./index.test.js
-     ✓ throws invalid number (3ms)
-     ✓ wait 500 ms (504ms)
-     ✓ test runs (95ms)
-
-   ...
+   npm test
    ```
 
-## Update the Action Metadata
+### Local Testing
 
-The [`action.yml`](action.yml) file defines metadata about your action, such as
-input(s) and output(s). For details about this file, see
-[Metadata syntax for GitHub Actions](https://docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions).
-
-When you copy this repository, update `action.yml` with the name, description,
-inputs, and outputs for your action.
-
-## Update the Action Code
-
-The [`src/`](./src/) directory is the heart of your action! This contains the
-source code that will be run when your action is invoked. You can replace the
-contents of this directory with your own code.
-
-There are a few things to keep in mind when writing your action code:
-
-- Most GitHub Actions toolkit and CI/CD operations are processed asynchronously.
-  In `main.ts`, you will see that the action is run in an `async` function.
-
-  ```javascript
-  import * as core from '@actions/core'
-  //...
-
-  async function run() {
-    try {
-      //...
-    } catch (error) {
-      core.setFailed(error.message)
-    }
-  }
-  ```
-
-  For more information about the GitHub Actions toolkit, see the
-  [documentation](https://github.com/actions/toolkit/blob/master/README.md).
-
-So, what are you waiting for? Go ahead and start customizing your action!
-
-1. Create a new branch
-
-   ```bash
-   git checkout -b releases/v1
-   ```
-
-1. Replace the contents of `src/` with your action code
-1. Add tests to `__tests__/` for your source code
-1. Format, test, and build the action
-
-   ```bash
-   npm run all
-   ```
-
-   > This step is important! It will run [`rollup`](https://rollupjs.org/) to
-   > build the final JavaScript action code with all dependencies included. If
-   > you do not run this step, your action will not work correctly when it is
-   > used in a workflow.
-
-1. (Optional) Test your action locally
-
-   The [`@github/local-action`](https://github.com/github/local-action) utility
-   can be used to test your action locally. It is a simple command-line tool
-   that "stubs" (or simulates) the GitHub Actions Toolkit. This way, you can run
-   your TypeScript action locally without having to commit and push your changes
-   to a repository.
-
-   The `local-action` utility can be run in the following ways:
-   - Visual Studio Code Debugger
-
-     Make sure to review and, if needed, update
-     [`.vscode/launch.json`](./.vscode/launch.json)
-
-   - Terminal/Command Prompt
-
-     ```bash
-     # npx @github/local action <action-yaml-path> <entrypoint> <dotenv-file>
-     npx @github/local-action . src/main.ts .env
-     ```
-
-   You can provide a `.env` file to the `local-action` CLI to set environment
-   variables used by the GitHub Actions Toolkit. For example, setting inputs and
-   event payload data used by your action. For more information, see the example
-   file, [`.env.example`](./.env.example), and the
-   [GitHub Actions Documentation](https://docs.github.com/en/actions/learn-github-actions/variables#default-environment-variables).
-
-1. Commit your changes
-
-   ```bash
-   git add .
-   git commit -m "My first action is ready!"
-   ```
-
-1. Push them to your repository
-
-   ```bash
-   git push -u origin releases/v1
-   ```
-
-1. Create a pull request and get feedback on your action
-1. Merge the pull request into the `main` branch
-
-Your action is now published! :rocket:
-
-For information about versioning your action, see
-[Versioning](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md)
-in the GitHub Actions toolkit.
-
-## Validate the Action
-
-You can now validate the action by referencing it in a workflow file. For
-example, [`ci.yml`](./.github/workflows/ci.yml) demonstrates how to reference an
-action in the same repository.
-
-```yaml
-steps:
-  - name: Checkout
-    id: checkout
-    uses: actions/checkout@v4
-
-  - name: Test Local Action
-    id: test-action
-    uses: ./
-    with:
-      milliseconds: 1000
-
-  - name: Print Output
-    id: output
-    run: echo "${{ steps.test-action.outputs.time }}"
-```
-
-For example workflow runs, check out the
-[Actions tab](https://github.com/actions/typescript-action/actions)! :rocket:
-
-## Usage
-
-After testing, you can create version tag(s) that developers can use to
-reference different stable versions of your action. For more information, see
-[Versioning](https://github.com/actions/toolkit/blob/master/docs/action-versioning.md)
-in the GitHub Actions toolkit.
-
-To include the action in a workflow in another repository, you can use the
-`uses` syntax with the `@` symbol to reference a specific branch, tag, or commit
-hash.
-
-```yaml
-steps:
-  - name: Checkout
-    id: checkout
-    uses: actions/checkout@v4
-
-  - name: Test Local Action
-    id: test-action
-    uses: actions/typescript-action@v1 # Commit with the `v1` tag
-    with:
-      milliseconds: 1000
-
-  - name: Print Output
-    id: output
-    run: echo "${{ steps.test-action.outputs.time }}"
-```
-
-## Publishing a New Release
-
-This project includes a helper script, [`script/release`](./script/release)
-designed to streamline the process of tagging and pushing new releases for
-GitHub Actions.
-
-GitHub Actions allows users to select a specific version of the action to use,
-based on release tags. This script simplifies this process by performing the
-following steps:
-
-1. **Retrieving the latest release tag:** The script starts by fetching the most
-   recent SemVer release tag of the current branch, by looking at the local data
-   available in your repository.
-1. **Prompting for a new release tag:** The user is then prompted to enter a new
-   release tag. To assist with this, the script displays the tag retrieved in
-   the previous step, and validates the format of the inputted tag (vX.X.X). The
-   user is also reminded to update the version field in package.json.
-1. **Tagging the new release:** The script then tags a new release and syncs the
-   separate major tag (e.g. v1, v2) with the new release tag (e.g. v1.0.0,
-   v2.1.2). When the user is creating a new major release, the script
-   auto-detects this and creates a `releases/v#` branch for the previous major
-   version.
-1. **Pushing changes to remote:** Finally, the script pushes the necessary
-   commits, tags and branches to the remote repository. From here, you will need
-   to create a new release in GitHub so users can easily reference the new tags
-   in their workflows.
-
-## Dependency License Management
-
-This template includes a GitHub Actions workflow,
-[`licensed.yml`](./.github/workflows/licensed.yml), that uses
-[Licensed](https://github.com/licensee/licensed) to check for dependencies with
-missing or non-compliant licenses. This workflow is initially disabled. To
-enable the workflow, follow the below steps.
-
-1. Open [`licensed.yml`](./.github/workflows/licensed.yml)
-1. Uncomment the following lines:
-
-   ```yaml
-   # pull_request:
-   #   branches:
-   #     - main
-   # push:
-   #   branches:
-   #     - main
-   ```
-
-1. Save and commit the changes
-
-Once complete, this workflow will run any time a pull request is created or
-changes pushed directly to `main`. If the workflow detects any dependencies with
-missing or non-compliant licenses, it will fail the workflow and provide details
-on the issue(s) found.
-
-### Updating Licenses
-
-Whenever you install or update dependencies, you can use the Licensed CLI to
-update the licenses database. To install Licensed, see the project's
-[Readme](https://github.com/licensee/licensed?tab=readme-ov-file#installation).
-
-To update the cached licenses, run the following command:
+You can test the action locally using the GitHub Actions local development
+tools:
 
 ```bash
-licensed cache
+# Set up environment variables
+export INPUT_GITHUB_TOKEN="your-github-token"  # Token with read:org and read:project permissions
+export INPUT_PROJECT_URL="https://github.com/orgs/your-org/projects/1"
+export INPUT_SLACK_BOT_TOKEN="xoxb-your-bot-token"
+export INPUT_SLACK_CHANNEL="#your-channel"
+
+# Run the action locally
+npm run local-action
 ```
 
-To check the status of cached licenses, run the following command:
+## License
 
-```bash
-licensed status
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
+for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
