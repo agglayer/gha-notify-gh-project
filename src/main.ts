@@ -124,22 +124,6 @@ async function fetchProjectData(
                           name
                         }
                       }
-                      repository {
-                        name
-                        url
-                      }
-                    }
-                    ... on ProjectV2ItemFieldPullRequestValue {
-                      field {
-                        ... on ProjectV2FieldCommon {
-                          name
-                        }
-                      }
-                      pullRequest {
-                        number
-                        url
-                        title
-                      }
                     }
                   }
                 }
@@ -287,24 +271,6 @@ async function fetchProjectData(
                 fieldName === 'Last updated'
               ) {
                 updatedAt = fieldValue.date || fieldValue.text || updatedAt
-              }
-
-              // Log repository and PR information for debugging if needed
-              if (
-                fieldValue.__typename ===
-                  'ProjectV2ItemFieldPullRequestValue' &&
-                fieldValue.pullRequest?.url
-              ) {
-                core.info(
-                  `🔗 Found PR: ${fieldValue.pullRequest.url} (will use project URL instead)`
-                )
-              } else if (
-                fieldValue.__typename === 'ProjectV2ItemFieldRepositoryValue' &&
-                fieldValue.repository?.url
-              ) {
-                core.info(
-                  `🏪 Found repository: ${fieldValue.repository.name} (will use project URL instead)`
-                )
               }
             }
           }
